@@ -27,12 +27,47 @@ pub fn login() -> Html {
     };
 
     html! {
-       <div class="bg-gray-800 flex w-screen">
-            <div class="container mx-auto flex flex-col justify-center items-center">
-                <form class="m-4 flex">
-                    <input {oninput} class="rounded-l-lg p-4 border-t mr-0 border-b border-l text-gray-800 border-gray-200 bg-white" placeholder="Username" />
-                    <Link<Route> to={Route::Chat}> <button {onclick} disabled={username.len()<1} class="px-8 rounded-r-lg bg-violet-600	  text-white font-bold p-4 uppercase border-violet-600 border-t border-b border-r" >{"Go Chatting!"}</button></Link<Route>>
+        <div class="min-h-screen w-full flex flex-col items-center justify-center bg-gradient-to-tr from-blue-500 via-indigo-600 to-purple-700 font-mono text-white px-6 py-12">
+            <div class="max-w-xl w-full bg-white bg-opacity-20 backdrop-blur-lg rounded-xl shadow-lg p-8 text-center">
+                <h1 class="text-4xl font-extrabold mb-4">{"👋 Welcome!"}</h1>
+                <p class="mb-8 text-lg opacity-90">
+                    {"Jump into the future of chatting 🚀"}
+                </p>
+                <form
+                    onsubmit={Callback::from(|e: FocusEvent| e.prevent_default())}
+                    class="flex flex-col md:flex-row items-center gap-4 max-w-md mx-auto"
+                >
+                    <input
+                        type="text"
+                        placeholder="Enter your username..."
+                        class="w-full p-4 text-gray-900 rounded-full outline-none text-base border-2 border-transparent focus:border-indigo-300 transition-all shadow-md"
+                        {oninput}
+                        value={(*username).clone()}
+                        required=true
+                        autocomplete="off"
+                    />
+                    <Link<Route> to={Route::Chat}>
+                        <button
+                            type="button"
+                            onclick={onclick}
+                            disabled={username.is_empty()}
+                            class="w-full md:w-auto bg-indigo-600 disabled:bg-indigo-400 text-white px-8 py-4 font-bold rounded-full hover:bg-indigo-700 hover:shadow-lg transform hover:-translate-y-1 transition-all duration-200 text-base uppercase tracking-wide"
+                        >
+                            {"Join Chat"}
+                        </button>
+                    </Link<Route>>
                 </form>
+                <div class="mt-6 text-sm italic opacity-80">
+                    {"Your creativity is your superpower — let's chat and create together!"}
+                </div>
+                <div class="mt-6 flex justify-center space-x-6 text-sm">
+                    <a href="https://www.weforum.org/agenda/2020/11/ai-automation-creativity-workforce-skill-fute-of-work/" target="_blank" rel="noopener noreferrer" class="hover:underline hover:text-white transition-colors">
+                        {"Why Creativity?"}
+                    </a>
+                    <a href="https://yew.rs/" target="_blank" rel="noopener noreferrer" class="hover:underline hover:text-white transition-colors">
+                        {"Powered by Yew"}
+                    </a>
+                </div>
             </div>
         </div>
     }

@@ -37,6 +37,7 @@ struct WebSocketMessage {
 struct UserProfile {
     name: String,
     avatar: String,
+    online: bool,
 }
 
 pub struct Chat {
@@ -45,7 +46,9 @@ pub struct Chat {
     _producer: Box<dyn Bridge<EventBus>>,
     wss: WebsocketService,
     messages: Vec<MessageData>,
+    username: String,
 }
+
 impl Component for Chat {
     type Message = Msg;
     type Properties = ();
@@ -78,6 +81,7 @@ impl Component for Chat {
             chat_input: NodeRef::default(),
             wss,
             _producer: EventBus::bridge(ctx.link().callback(Msg::HandleMsg)),
+            username,
         }
     }
 
@@ -91,45 +95,49 @@ impl Component for Chat {
                         self.users = users_from_message
                             .iter()
                             .map(|u| UserProfile {
-                                name: u.into(),
+                                name: u.clone(),
                                 avatar: format!(
                                     "https://avatars.dicebear.com/api/adventurer-neutral/{}.svg",
                                     u
-                                )
-                                .into(),
+                                ),
+                                online: true,
                             })
                             .collect();
                         return true;
                     }
                     MsgTypes::Message => {
-                        let message_data: MessageData =
-                            serde_json::from_str(&msg.data.unwrap()).unwrap();
-                        self.messages.push(message_data);
-                        return true;
+                        if let Some(data_str) = &msg.data {
+                            let message_data: MessageData =
+                                serde_json::from_str(data_str).unwrap();
+                            self.messages.push(message_data);
+                            return true;
+                        }
+                        false
                     }
-                    _ => {
-                        return false;
-                    }
+                    _ => false,
                 }
             }
             Msg::SubmitMessage => {
-                let input = self.chat_input.cast::<HtmlInputElement>();
-                if let Some(input) = input {
-                    let message = WebSocketMessage {
-                        message_type: MsgTypes::Message,
-                        data: Some(input.value()),
-                        data_array: None,
-                    };
-                    if let Err(e) = self
-                        .wss
-                        .tx
-                        .clone()
-                        .try_send(serde_json::to_string(&message).unwrap())
-                    {
-                        log::debug!("error sending to channel: {:?}", e);
+                if let Some(input) = self.chat_input.cast::<HtmlInputElement>() {
+                    let val = input.value();
+                    if !val.trim().is_empty() {
+                        let message = WebSocketMessage {
+                            message_type: MsgTypes::Message,
+                            data: Some(val.clone()),
+                            data_array: None,
+                        };
+                        if let Err(e) = self
+                            .wss
+                            .tx
+                            .clone()
+                            .try_send(serde_json::to_string(&message).unwrap())
+                        {
+                            log::debug!("error sending to channel: {:?}", e);
+                        }
+                        input.set_value("");
+                        return false;
                     }
-                    input.set_value("");
-                };
+                }
                 false
             }
         }
@@ -139,65 +147,110 @@ impl Component for Chat {
         let submit = ctx.link().callback(|_| Msg::SubmitMessage);
 
         html! {
-            <div class="flex w-screen">
-                <div class="flex-none w-56 h-screen bg-gray-100">
-                    <div class="text-xl p-3">{"Users"}</div>
+            <div class="flex w-screen h-screen bg-gradient-to-r from-purple-300 via-pink-300 to-red-300 font-sans">
+                <aside class="flex-none w-64 h-full bg-white shadow-lg p-4 overflow-y-auto">
+                    <h2 class="text-2xl font-semibold mb-4 text-purple-700">{"🧑‍🤝‍🧑 Active Users"}</h2>
                     {
-                        self.users.clone().iter().map(|u| {
-                            html!{
-                                <div class="flex m-3 bg-white rounded-lg p-2">
-                                    <div>
-                                        <img class="w-12 h-12 rounded-full" src={u.avatar.clone()} alt="avatar"/>
-                                    </div>
-                                    <div class="flex-grow p-3">
-                                        <div class="flex text-xs justify-between">
-                                            <div>{u.name.clone()}</div>
-                                        </div>
-                                        <div class="text-xs text-gray-400">
-                                            {"Hi there!"}
-                                        </div>
+                        self.users.iter().map(|u| {
+                            html! {
+                                <div key={u.name.clone()} class="flex items-center mb-3 p-2 rounded-lg hover:bg-purple-100 transition-colors cursor-pointer">
+                                    <img
+                                        class="w-12 h-12 rounded-full mr-3 shadow"
+                                        src={u.avatar.clone()}
+                                        alt="avatar"
+                                        />
+                                    <div class="flex flex-col">
+                                        <span class="font-semibold text-purple-900">{&u.name}</span>
+                                        <span class="text-xs text-green-600 flex items-center">
+                                            <span class="inline-block w-2 h-2 rounded-full bg-green-400 mr-1 animate-pulse"></span>
+                                            {"Online"}
+                                        </span>
                                     </div>
                                 </div>
                             }
                         }).collect::<Html>()
                     }
-                </div>
-                <div class="grow h-screen flex flex-col">
-                    <div class="w-full h-14 border-b-2 border-gray-300"><div class="text-xl p-3">{"💬 Chat!"}</div></div>
-                    <div class="w-full grow overflow-auto border-b-2 border-gray-300">
+                </aside>
+                <main class="flex-grow flex flex-col h-full">
+                    <header class="flex-none h-16 bg-white shadow flex items-center px-6 border-b border-purple-300">
+                        <h1 class="text-xl font-bold text-purple-700">{"💬 Let's Chat!"}</h1>
+                    </header>
+                    <section class="flex-grow overflow-auto p-6 bg-purple-50">
                         {
                             self.messages.iter().map(|m| {
-                                let user = self.users.iter().find(|u| u.name == m.from).unwrap();
-                                html!{
-                                    <div class="flex items-end w-3/6 bg-gray-100 m-8 rounded-tl-lg rounded-tr-lg rounded-br-lg ">
-                                        <img class="w-8 h-8 rounded-full m-3" src={user.avatar.clone()} alt="avatar"/>
-                                        <div class="p-3">
-                                            <div class="text-sm">
-                                                {m.from.clone()}
-                                            </div>
-                                            <div class="text-xs text-gray-500">
-                                                if m.message.ends_with(".gif") {
-                                                    <img class="mt-3" src={m.message.clone()}/>
-                                                } else {
-                                                    {m.message.clone()}
+                                let is_current_user = m.from == self.username;
+                                let user = self.users.iter().find(|u| u.name == m.from);
+                                let avatar = user.map(|u| u.avatar.clone()).unwrap_or_default();
+                                let is_gif = m.message.to_lowercase().ends_with(".gif");
+
+                                html! {
+                                        <div key={format!("{}-{}", m.from, m.message)} class={classes!(
+                                            "flex", "items-start", "mb-6",
+                                            if is_current_user { "justify-end" } else { "justify-start" }
+                                        )}>
+                                        {
+                                            if !is_current_user {
+                                                html! {
+                                                    <img class="w-10 h-10 rounded-full mr-3 shadow-md" src={avatar.clone()} alt="avatar"/>
                                                 }
-                                            </div>
+                                            } else {
+                                                html! {}
+                                            }
+                                        }
+
+                                        <div class={classes!(
+                                            "rounded-lg", "shadow", "p-3", "max-w-xs", "break-words",
+                                            if is_current_user {
+                                                "bg-purple-600 text-white"
+                                            } else {
+                                                "bg-white text-gray-800"
+                                            }
+                                        )}>
+                                            {
+                                                if !is_current_user {
+                                                    html! { <div class="text-sm text-gray-500">{ &m.from }</div> }
+                                                } else {
+                                                    html! {}
+                                                }
+                                            }
+                                            <div class="font-semibold mb-1">{ &m.from }</div>
+                                            {
+                                                if is_gif {
+                                                    html! { <img class="rounded-md max-w-xs" src={m.message.clone()} alt="gif" /> }
+                                                } else {
+                                                    html! { <p class="whitespace-pre-wrap">{ &m.message }</p> }
+                                                }
+                                            }
                                         </div>
+
+                                        {
+                                            if is_current_user {
+                                                html! {
+                                                    <img class="w-10 h-10 rounded-full ml-3 shadow-md" src={avatar.clone()} alt="avatar"/>
+                                                }
+                                            } else {
+                                                html! {}
+                                            }
+                                        }
                                     </div>
                                 }
                             }).collect::<Html>()
                         }
-
-                    </div>
-                    <div class="w-full h-14 flex px-3 items-center">
-                        <input ref={self.chat_input.clone()} type="text" placeholder="Message" class="block w-full py-2 pl-4 mx-3 bg-gray-100 rounded-full outline-none focus:text-gray-700" name="message" required=true />
-                        <button onclick={submit} class="p-3 shadow-sm bg-blue-600 w-10 h-10 rounded-full flex justify-center items-center color-white">
-                            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="fill-white">
-                                <path d="M0 0h24v24H0z" fill="none"></path><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+                    </section>
+                    <footer class="flex-none bg-white border-t border-purple-300 p-4 flex items-center space-x-4">
+                        <input
+                            ref={self.chat_input.clone()}
+                            type="text"
+                            placeholder="Write your message..."
+                            class="flex-grow px-4 py-2 rounded-full border border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                        <button onclick={submit} class="bg-purple-600 hover:bg-purple-700 text-white p-3 rounded-full shadow-md flex items-center justify-center" aria-label="Send message">
+                            <svg viewBox="0 0 24 24" class="w-6 h-6 fill-white" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                             </svg>
                         </button>
-                    </div>
-                </div>
+                    </footer>
+                </main>
             </div>
         }
     }
